@@ -1,0 +1,10 @@
+package hm-verification
+version = 0.0.1
+
+depends = contrib
+
+opts = "--total"
+
+main = Main
+
+executable = main
