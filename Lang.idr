@@ -37,7 +37,8 @@ data (|-) : Env n -> TypedTerm n -> Type where
         ---------------------------
         env |- Var fi ::> ty
 
-    TApp : (env |- fun ::> (argTy :-> retTy))
+    TApp : {argTy : Typ} 
+        -> (env |- fun ::> (argTy :-> retTy))
         -> (env |- arg ::> argTy) ->
         ---------------------------
         env |- App fun arg ::> retTy

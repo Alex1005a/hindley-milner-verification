@@ -63,9 +63,15 @@ strengthenScope notElFtv vElVars (TSFun tsArg tsRet) =
     let recRet = strengthenScope notElFunFtv vElVars tsRet in 
     TSFun recArg recRet
 
-weakenScope : {ty, xs, ys : _} -> TypeScope (xs ++ zs) ty -> TypeScope (xs ++ ys ++ zs) ty
+export
+weakenScope : {xs, ys : _} -> TypeScope (xs ++ zs) ty -> TypeScope (xs ++ ys ++ zs) ty
 weakenScope (TSVar nElVars) = TSVar $ weakenElem nElVars
 weakenScope (TSFun tsArg tsRet) = TSFun (weakenScope tsArg) (weakenScope tsRet)
+
+export
+weakenSubstScope : {x : _} -> TypeScopeSubst svars vars' s -> TypeScopeSubst svars (x :: vars') s
+weakenSubstScope [] = []
+weakenSubstScope (ts :: tss) = weakenScope {xs = []} {ys = [x]} {zs = vars'} ts :: weakenSubstScope tss
 
 export
 typeScopeFtv : (ty : Typ) -> TypeScope (ftv ty) ty
