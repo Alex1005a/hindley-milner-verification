@@ -86,6 +86,20 @@ notFindSplit notFind =
      \isJustYs => notFind $ isJustFindPrepend _ isJustYs)
 
 export
+findSplit : {c : _} 
+    -> {xs, ys : List a}
+    -> IsJust (find' c (xs ++ ys)) -> Either (IsJust $ find' c xs) (IsJust $ find' c ys)
+findSplit {xs = x :: xs} isJustFind with (decEq (c x) True)
+    findSplit {xs = x :: xs} isJustFind | Yes ok =
+        rewrite ok in
+        Left ItIsJust
+    findSplit {xs = x :: xs}isJustFind | No contra =
+        rewrite notTrueFalse contra in
+        let isJustFind' = replace {p = \b => IsJust (ifThenElse b (Just x) (find' c (xs ++ ys)))} (notTrueFalse contra) isJustFind in
+        findSplit isJustFind'
+findSplit {xs = []} isJustFind = Right isJustFind
+
+export
 lengthSDrop : (el : Elem i xs) -> S (length (dropElem xs el)) === length xs
 lengthSDrop Here = Refl
 lengthSDrop (There later) = cong S $ lengthSDrop later

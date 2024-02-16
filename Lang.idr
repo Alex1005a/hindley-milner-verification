@@ -52,3 +52,25 @@ public export
 ftv : Typ -> List Nat
 ftv (TypVar i) = [i]
 ftv (argTy :-> retTy) = ftv argTy ++ ftv retTy
+
+public export
+data PartType : Typ -> Nat -> Typ -> Type where
+    TyRefl : PartType ty 0 ty
+    TyFunArg : PartType ty n argTy -> PartType ty (S n) (argTy :-> retTy)
+    TyFunRet : PartType ty n retTy -> PartType ty (S n) (argTy :-> retTy)
+
+argPartType : PartType (argTy :-> retTy) n ty -> PartType argTy (S n) ty
+argPartType (TyFunArg partTy) = TyFunArg $ argPartType partTy
+argPartType (TyFunRet partTy) = TyFunRet $ argPartType partTy
+argPartType TyRefl = TyFunArg TyRefl
+
+retPartType : PartType (argTy :-> retTy) n ty -> PartType retTy (S n) ty
+retPartType (TyFunArg partTy) = TyFunArg $ retPartType partTy
+retPartType (TyFunRet partTy) = TyFunRet $ retPartType partTy
+retPartType TyRefl = TyFunRet TyRefl
+
+
+export
+partTypeSucc : Not (PartType ty (S n) ty)
+partTypeSucc (TyFunArg partTy) = partTypeSucc (argPartType partTy)
+partTypeSucc (TyFunRet partTy) = partTypeSucc (retPartType partTy)

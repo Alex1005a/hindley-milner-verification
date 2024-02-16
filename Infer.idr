@@ -23,22 +23,6 @@ atIdx : (env, idx : _) -> AtIndex idx env (Vect.index idx env)
 atIdx (x :: xs) FZ = Here
 atIdx (x :: xs) (FS idx) = There $ atIdx xs idx
 
-export
-inferW : (term : Term n) -> (env : Env n) -> Nat -> Maybe ((sub ** ty ** (substEnv sub env |- (term ::> ty))), Nat)
-inferW (Var idx) env i = pure (([] ** index idx env **
-    rewrite substEnvId env in TVar $ atIdx env idx), i)
-inferW (Abs body) env i = do
-    ((sub ** retTy ** retRule), ni) <- inferW body (TypVar i :: env) (S i)
-    pure ((sub ** ((substType (TypVar i) sub) :-> retTy) ** TAbs retRule), ni)
-inferW (App fun arg) env i = do
-    ((s1 ** funTy ** funRule), n1) <- inferW fun env i
-    ((s2 ** argTy ** argRule), n2) <- inferW arg (substEnv s1 env) n1
-    (s3 ** eq) <- unify (substType funTy s2) (argTy :-> (TypVar n2))
-    pure (((s3 + s2) + s1 ** substType (TypVar n2) s3 **
-        rewrite composeSubstEnv env s1 (s3 + s2) in
-        rewrite composeSubstEnv (substEnv s1 env) s2 s3 in
-        TApp {argTy = substType argTy s3} (rewrite sym eq in substToRule s3 $ substToRule s2 funRule) (substToRule s3 argRule)), S n2)
-
 Untypable : (env : Env n) -> (term : Term n) -> Type
 Untypable env tm = (ty : Typ) -> (s : Subst) -> Not (substEnv s env |- (tm ::> ty))
 
@@ -179,31 +163,70 @@ lookupScope el ((::) {i} ts tss) =
                 Here => absurd $ contra (rewrite equalNatIdTrue i in Refl)
                 There later => lookupScope later tss
 
-inferW'' : {vars : _}
+eqSubstEnv : All (TypeScope vars) env
+    -> ((ty' : Typ) -> TypeScope vars ty' -> substType ty' s'' = substType ty' (s + ss))
+    -> substEnv s'' env = substEnv (s + ss) env
+eqSubstEnv [] mgt = Refl
+eqSubstEnv (ts :: allScope) mgt =
+    rewrite mgt _ ts in
+    rewrite eqSubstEnv {s''} allScope mgt in
+    Refl
+
+inferW' : {vars : _}
     -> (term : Term n)
     -> (env : Env n)
     -> (tv : Nat)
     -> (alll : All (TypeScope vars) env)
     -> All (`LT` tv) vars
-    -> Maybe (sub ** ty ** ntv ** svars ** vars' ** (substEnv sub env |- (term ::> ty), TypeScope vars' ty, MGT sub alll term ty, All (flip Elem $ svars ++ vars') vars, TypeScopeSubst svars vars' sub, All (`LT` ntv) vars'))
-inferW'' (Var idx) env i allScope allLT =
+    -> Either (Untypable env term) (sub ** ty ** ntv ** svars ** vars' ** (substEnv sub env |- (term ::> ty), TypeScope vars' ty, MGT sub alll term ty, All (flip Elem $ svars ++ vars') vars, TypeScopeSubst svars vars' sub, All (`LT` ntv) vars'))
+inferW' (Var idx) env i allScope allLT =
     pure ([] ** index idx env ** i ** [] ** vars **
         (rewrite substEnvId env in TVar $ atIdx env idx, idxAll idx allScope, \s0 => \ty0 => \r' => (s0 ** (\_ => \_ => Refl, mgtVar r')), allElem vars, [], allLT))
-inferW'' (Abs body) env i allScope allLT = do
-    (sub ** retTy ** ni ** svars ** vars' ** (retRule, ts, mgt, (iel :: allEl), tsSub, nlt)) <- inferW'' body (TypVar i :: env) (S i) {vars = i :: vars} (TSVar Here :: mapProperty (weakenScope {xs = []} {ys = [i]}) allScope) (reflexive :: mapProperty lteSuccRight allLT)
+inferW' (Abs body) env i allScope allLT =
+    let Right (sub ** retTy ** ni ** svars ** vars' ** (retRule, ts, mgt, (iel :: allEl), tsSub, nlt)) = inferW' body (TypVar i :: env) (S i) {vars = i :: vars} (TSVar Here :: mapProperty (weakenScope {xs = []} {ys = [i]}) allScope) (reflexive :: mapProperty lteSuccRight allLT)
+        | Left contra =>
+            Left $ \ty' => \s' => \(TAbs {argTy} {retTy} r') =>
+                contra _ ((i, argTy) :: s')
+                    (rewrite equalNatIdTrue i in
+                     rewrite substEnvNotElWeaken {s = s'} {ty' = argTy} {i} env allScope (greaterAllNotEl _ allLT) in r') in
     pure (sub ** ((substType (TypVar i) sub) :-> retTy) ** ni ** svars ** vars' **
         (TAbs retRule, TSFun (lookupScope iel tsSub) ts,
          mgtAbs (greaterAllNotEl _ allLT) allScope mgt, allEl, tsSub, nlt))
-inferW'' (App fun arg) env i allScope allLT = do
-    (s1 ** funTy ** n1 ** svars1 ** vars1' ** (funRule, ts1, mgt1, allEl1, tsSub1, nlt1)) <- inferW'' fun env i allScope allLT
-    (s2 ** argTy ** n2 ** svars2 ** vars2' ** (argRule, ts2, mgt2, allEl2, tsSub2, nlt2)) <- inferW'' arg (substEnv s1 env) n1 (substEnvScope allScope allEl1 tsSub1) nlt1
-    let funTys2ts = substTypeScope _ allEl2 ts1 tsSub2
-    (s3 ** (scopeRel, eq, mg)) <- unifyAcc (substType funTy s2) (weakenScope {xs = []} {ys = [n2]} {zs = vars2'} funTys2ts) (argTy :-> (TypVar n2)) (TSFun (weakenScope {xs = []} {ys = [n2]} {zs = vars2'} ts2) (TSVar Here) ) (wellFoundLex _ _)
-    let newTss = (mapTypeSubst scopeRel.allEl (weakenSubstScope tsSub2) scopeRel.tyVarSub) ++ scopeRel.tyVarSub 
-    let (n2el :: allVars2) = scopeRel.allEl
+inferW' (App fun arg) env i allScope allLT =
+    let Right (s1 ** funTy ** n1 ** svars1 ** vars1' ** (funRule, ts1, mgt1, allEl1, tsSub1, nlt1)) = inferW' fun env i allScope allLT
+        | Left contra =>
+            Left $ \ty' => \s' => \(TApp rf ra) => 
+            contra _ s' rf in
+    let Right (s2 ** argTy ** n2 ** svars2 ** vars2' ** (argRule, ts2, mgt2, allEl2, tsSub2, nlt2)) = inferW' arg (substEnv s1 env) n1 (substEnvScope allScope allEl1 tsSub1) nlt1
+        | Left contra =>
+            Left $ \ty' => \s'' => \(TApp rf ra) => 
+            let (ss ** (mgtTy', _)) = mgt1 s'' _ rf in
+            let envEq : substEnv s'' env === substEnv (ss + s1) env = eqSubstEnv {s''} allScope mgtTy' in
+            contra _ ss (rewrite sym $ composeSubstEnv env s1 ss in
+                         rewrite sym envEq in ra) in
+    let funTys2ts = substTypeScope _ allEl2 ts1 tsSub2 in
+    let Right (s3 ** (scopeRel, eq, mg)) = unifyAcc (substType funTy s2) (weakenScope {xs = []} {ys = [n2]} {zs = vars2'} funTys2ts) (argTy :-> TypVar n2) (TSFun (weakenScope {xs = []} {ys = [n2]} {zs = vars2'} ts2) (TSVar Here) ) (wellFoundLex _ _)
+        | Left contra =>
+            Left $ \ty''' => \s'' => \(TApp {argTy = argTy'} rf ra) =>
+            let (ss1 ** (mgtTy1, eq1)) = mgt1 s'' (argTy' :-> ty''') rf in
+            let envEq : substEnv s'' env === substEnv ss1 (substEnv s1 env) =
+                    rewrite sym $ composeSubstEnv env s1 ss1 in
+                    eqSubstEnv {s''} allScope mgtTy1 in
+            let (ss2 ** (mgtTy2, eq2)) = mgt2 ss1 argTy' (rewrite sym envEq in ra) in
+            contra ((n2, ty''') :: ss2)
+                (rewrite equalNatIdTrue n2 in
+                 rewrite substTyNotElWeaken {s = ss2} {ty' = ty'''} {i = n2} argTy ts2 (greaterAllNotEl _ nlt2) in
+                 rewrite substTyNotElWeaken {s = ss2} {ty' = ty'''} {i = n2} _ funTys2ts (greaterAllNotEl _ nlt2) in
+                 rewrite sym eq2 in
+                 rewrite sym $ composeSubst funTy s2 ss2 in
+                 rewrite sym $ mgtTy2 _ ts1 in
+                 rewrite sym eq1 in
+                 Refl) in
+    let newTss = (mapTypeSubst scopeRel.allEl (weakenSubstScope tsSub2) scopeRel.tyVarSub) ++ scopeRel.tyVarSub in
+    let (n2el :: allVars2) = scopeRel.allEl in
     let newTss = mapTypeSubst (rewrite sym $ appendAssociative svars2 scopeRel.svars scopeRel.vars' in
-                               allElemReplace allVars2 allEl2) tsSub1 newTss ++ newTss
-    let allll = allElemReplace {vars' = svars1 ++ svars2} allVars2 (rewrite sym $ appendAssociative svars1 svars2 vars2' in allElemReplace allEl2 allEl1)
+                               allElemReplace allVars2 allEl2) tsSub1 newTss ++ newTss in
+    let allll = allElemReplace {vars' = svars1 ++ svars2} allVars2 (rewrite sym $ appendAssociative svars1 svars2 vars2' in allElemReplace allEl2 allEl1) in
     pure ((s3 + s2) + s1 ** substType (TypVar n2) s3 ** S n2 ** _ ** _ **
         (rewrite composeSubstEnv env s1 (s3 + s2) in
         rewrite composeSubstEnv (substEnv s1 env) s2 s3 in
@@ -212,3 +235,10 @@ inferW'' (App fun arg) env i allScope allLT = do
             rewrite appendAssociative svars1 svars2 scopeRel.svars in
             rewrite sym $ appendAssociative (svars1 ++ svars2) scopeRel.svars scopeRel.vars' in allll, newTss,
             greaterAllStrengthen {xss = []} scopeRel.allElTyVars (reflexive :: mapProperty lteSuccRight nlt2)))
+
+export
+inferW : (tm : Term 0) -> Either (Untypable [] tm) (sub ** ty ** ([] |- (tm ::> ty), MGT {vars = []} sub [] tm ty))
+inferW tm = do
+    (sub ** ty ** ni ** svars ** vars' ** (rule, ts, mgt, allEl, tsSub, nlt)) <- inferW' {vars = []} tm [] 0 [] []
+    pure (sub ** ty ** (rule, mgt))
+        
