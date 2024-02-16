@@ -89,14 +89,14 @@ mgtAbs : {i : _}
     -> (s' : Subst ** ((ty' : Typ) -> TypeScope vars ty' -> (substType ty' s0 = substType ty' (s' + sub)), ty0 = substType (substType (TypVar i) sub) s' :-> substType ty s'))
 mgtAbs notEl allScope mgtt s0 (argTy :-> retTy) (TAbs {argTy} {retTy} r') =
     let (s' ** (substId, retEqty')) = mgtt ((i, argTy) :: s0) retTy
-                    (rewrite equalNatIdTrue i in
+                    (rewrite equalNatReflTrue i in
                      rewrite substEnvNotElWeaken {s = s0} {ty' = argTy} {i} env allScope notEl in r') in
     (s' ** rewrite sym $ composeSubst (TypVar i) sub s' in
         (\ttt => \scop =>
             rewrite sym $ substTyNotElWeaken {s = s0} {ty' = argTy} {i} ttt scop notEl in
             substId ttt (weakenScope {xs = []} {ys = [i]} scop),
             rewrite sym $ substId (TypVar i) (TSVar Here) in
-            rewrite equalNatIdTrue i in cong (argTy :->) retEqty'))
+            rewrite equalNatReflTrue i in cong (argTy :->) retEqty'))
 
 mgtApp : {n2, svars1, svars2, s1, s2, s3 : _}
     -> TypeScopeSubst svars1 vars1' s1
@@ -124,7 +124,7 @@ mgtApp tsSub1 tsSub2 allEl1 allEl2 ts1 ts2 funTys2ts notEl envScope mgt1 mgt2 mg
                                      rewrite sym $ composeSubst funTy s2 ss2 in
                                      rewrite sym $ substId2 _ ts1 in
                                      rewrite sym eqTy in
-                                     rewrite equalNatIdTrue n2 in
+                                     rewrite equalNatReflTrue n2 in
                                      rewrite eqTy2 in
                                      rewrite substTyNotElWeaken {s = ss2} {ty' = ty0} {i = n2} _ ts2 notEl in
                                      Refl) in
@@ -144,7 +144,7 @@ mgtApp tsSub1 tsSub2 allEl1 allEl2 ts1 ts2 funTys2ts notEl envScope mgt1 mgt2 mg
         Refl,
         rewrite sym $ composeSubst (TypVar n2) s3 ss3 in
         rewrite sym $ substId3 (TypVar n2) in
-        rewrite equalNatIdTrue n2 in
+        rewrite equalNatReflTrue n2 in
         Refl))
 
 idxAll : {xs : Vect n a} -> (i : Fin n) -> All p xs -> p (index i xs)
@@ -160,7 +160,7 @@ lookupScope el ((::) {i} ts tss) =
         No contra =>
             rewrite notTrueFalse contra in
             case el of
-                Here => absurd $ contra (rewrite equalNatIdTrue i in Refl)
+                Here => absurd $ contra (rewrite equalNatReflTrue i in Refl)
                 There later => lookupScope later tss
 
 eqSubstEnv : All (TypeScope vars) env
@@ -187,7 +187,7 @@ inferW' (Abs body) env i allScope allLT =
         | Left contra =>
             Left $ \ty' => \s' => \(TAbs {argTy} {retTy} r') =>
                 contra _ ((i, argTy) :: s')
-                    (rewrite equalNatIdTrue i in
+                    (rewrite equalNatReflTrue i in
                      rewrite substEnvNotElWeaken {s = s'} {ty' = argTy} {i} env allScope (greaterAllNotEl _ allLT) in r') in
     pure (sub ** ((substType (TypVar i) sub) :-> retTy) ** ni ** svars ** vars' **
         (TAbs retRule, TSFun (lookupScope iel tsSub) ts,
@@ -214,7 +214,7 @@ inferW' (App fun arg) env i allScope allLT =
                     eqSubstEnv {s''} allScope mgtTy1 in
             let (ss2 ** (mgtTy2, eq2)) = mgt2 ss1 argTy' (rewrite sym envEq in ra) in
             contra ((n2, ty''') :: ss2)
-                (rewrite equalNatIdTrue n2 in
+                (rewrite equalNatReflTrue n2 in
                  rewrite substTyNotElWeaken {s = ss2} {ty' = ty'''} {i = n2} argTy ts2 (greaterAllNotEl _ nlt2) in
                  rewrite substTyNotElWeaken {s = ss2} {ty' = ty'''} {i = n2} _ funTys2ts (greaterAllNotEl _ nlt2) in
                  rewrite sym eq2 in
@@ -226,7 +226,7 @@ inferW' (App fun arg) env i allScope allLT =
     let (n2el :: allVars2) = scopeRel.allEl in
     let newTss = mapTypeSubst (rewrite sym $ appendAssociative svars2 scopeRel.svars scopeRel.vars' in
                                allElemReplace allVars2 allEl2) tsSub1 newTss ++ newTss in
-    let allll = allElemReplace {vars' = svars1 ++ svars2} allVars2 (rewrite sym $ appendAssociative svars1 svars2 vars2' in allElemReplace allEl2 allEl1) in
+    let allll = allElemReplace {ys = svars1 ++ svars2} allVars2 (rewrite sym $ appendAssociative svars1 svars2 vars2' in allElemReplace allEl2 allEl1) in
     pure ((s3 + s2) + s1 ** substType (TypVar n2) s3 ** S n2 ** _ ** _ **
         (rewrite composeSubstEnv env s1 (s3 + s2) in
         rewrite composeSubstEnv (substEnv s1 env) s2 s3 in

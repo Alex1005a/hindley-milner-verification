@@ -3,9 +3,9 @@ module Ext.Nat
 import Data.Nat
 
 export
-equalNatIdTrue : (n : Nat) -> equalNat n n === True
-equalNatIdTrue Z = Refl
-equalNatIdTrue (S n) = equalNatIdTrue n
+equalNatReflTrue : (n : Nat) -> equalNat n n === True
+equalNatReflTrue Z = Refl
+equalNatReflTrue (S n) = equalNatReflTrue n
 
 export
 notEqNatFalse : {i, n : Nat} -> Not (i === n) -> equalNat i n === False

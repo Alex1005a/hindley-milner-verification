@@ -38,7 +38,7 @@ composeTR : {vars, s1 : _}
 composeTR (MkTR vars' svars allEl allElTyVars lenEq tyScopeSub) (MkTR vars'' svars' allEl' allElTyVars' lenEq' tyScopeSub') =
     MkTR vars'' (svars ++ svars')
         (rewrite sym $ appendAssociative svars svars' vars'' in allElemReplace allEl' allEl)
-        (allElemReplace {vars' = []} allElTyVars allElTyVars')
+        (allElemReplace {ys = []} allElTyVars allElTyVars')
         (rewrite sym $ appendAssociative svars svars' vars'' in lengthReplace _ (sym lenEq') lenEq)
         ((mapTypeSubst allEl' tyScopeSub tyScopeSub') ++ tyScopeSub')
 
@@ -48,7 +48,7 @@ substTypeVarId (TypVar v) lookNone =
         Yes prf =>
             rewrite prf in
             rewrite lookNone in
-            rewrite equalNatIdTrue n in
+            rewrite equalNatReflTrue n in
             Refl
         No contra =>
             rewrite notEqNatFalse contra in Refl
@@ -62,7 +62,7 @@ substTypeLook (TypVar v) lookJust =
     case decEq v n of
         Yes prf =>
             rewrite prf in
-            rewrite equalNatIdTrue n in
+            rewrite equalNatReflTrue n in
             rewrite lookJust in
             Refl
         No contra =>
@@ -113,9 +113,9 @@ varBind n nElVars (TypVar i) (TSVar iElVars) =
         Yes ok => pure ([] ** (MkTR vars [] (allElem vars) (allElem vars) Refl [], rewrite ok in Refl, \ss => \eqq => (ss ** \_ => Refl)))
         No contra =>
             let iElDropVars = strengthenElem (\eq => contra $ sym eq) nElVars iElVars in
-            pure ([(n, TypVar i)] ** (MkTR _ [n] (allElemDrop vars nElVars) (allDrop _ $ allElem vars) (lengthSDrop nElVars) [TSVar iElDropVars],
+            pure ([(n, TypVar i)] ** (MkTR _ [n] (allElemToTop vars nElVars) (allDrop _ $ allElem vars) (lengthSuccDropEl nElVars) [TSVar iElDropVars],
                 rewrite notEqNatFalse contra in
-                rewrite equalNatIdTrue n in Refl,
+                rewrite equalNatReflTrue n in Refl,
                 \ss => \eqq => (ss ** 
                     rewrite sym eqq in
                     case isItJust $ lookup' n ss of
@@ -141,8 +141,8 @@ varBind n nElVars ty@(aty :-> rty) ts =
                 partTypeSucc {ty = substType (TypVar n) s} partTyEq
         No contra =>
             let notEl = notTrans isJustFindElem contra in
-            pure $ ([(n, (aty :-> rty))] ** (MkTR _ [n] (allElemDrop vars nElVars) (allDrop _ $ allElem vars) (lengthSDrop nElVars) [strengthenScope notEl nElVars ts],
-                rewrite equalNatIdTrue n in
+            pure $ ([(n, (aty :-> rty))] ** (MkTR _ [n] (allElemToTop vars nElVars) (allDrop _ $ allElem vars) (lengthSuccDropEl nElVars) [strengthenScope notEl nElVars ts],
+                rewrite equalNatReflTrue n in
                 rewrite substTyIdNoFtv (aty :-> rty) (aty :-> rty) n contra in
                 Refl, \ss => \eqq => (ss **
                     rewrite sym eqq in
@@ -189,7 +189,7 @@ unifyAcc (argTy1 :-> retTy1) (TSFun tsArg1 tsRet1) (argTy2 :-> retTy2) (TSFun ts
                         let [] = tss in
                         rewrite substTypeId retTy1 in
                         Right $ LTESucc $ lteAddLeft _ _
-                    (s :: ss) => Left $ lenghtLteIfEq (s :: ss) _ _ leq)
+                    (s :: ss) => Left $ lengthLTIfEqConcat (s :: ss) _ _ leq)
         | Left contra =>
             Left $ \s => \eq =>
             let (eqSubArg, eqSubRet) = funTyElemsEq eq in

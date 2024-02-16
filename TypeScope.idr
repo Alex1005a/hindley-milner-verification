@@ -35,7 +35,7 @@ substTypeScope' (TypVar v) ts [] = ts
 substTypeScope' {svars = i :: svars'} (TypVar v) (TSVar vElVars) (ts :: tss) =
     case decEq v i of
         Yes ok =>
-            rewrite ok in rewrite equalNatIdTrue i in ts
+            rewrite ok in rewrite equalNatReflTrue i in ts
         No contra =>
             rewrite notEqNatFalse contra in
             case vElVars of

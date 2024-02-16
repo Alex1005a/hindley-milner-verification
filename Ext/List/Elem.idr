@@ -4,7 +4,7 @@ import Data.List.Elem
 import Data.List.Quantifiers
 
 export
-strengthenElem : Not (v === n) -> (el : Elem v vars) -> Elem n vars -> Elem n (dropElem vars el)
+strengthenElem : Not (v === n) -> (el : Elem v xs) -> Elem n xs -> Elem n (dropElem xs el)
 strengthenElem notEq Here Here = absurd $ notEq Refl
 strengthenElem notEq (There later) Here = Here
 strengthenElem notEq Here (There later') = later'
@@ -18,48 +18,48 @@ weakenElem {xs = x :: xs} Here = Here
 weakenElem {xs = x :: xs} (There later) = There $ weakenElem later
 
 export
-elemNotEq : Not (Elem v (n :: ns)) -> Not (v === n)
+elemNotEq : Not (Elem x (y :: ys)) -> Not (x === y)
 elemNotEq notEl = \Refl => notEl Here
 
-elemAdd : (lst' : _) -> Elem i (lst' ++ lst) -> Elem i (lst' ++ l :: lst)
+elemAdd : (xs : _) -> Elem x (xs ++ ys) -> Elem x (xs ++ y :: ys)
 elemAdd [] el = There el
-elemAdd (ll :: lst') Here = Here
-elemAdd (ll :: lst') (There later) = There $ elemAdd lst' later
+elemAdd (_ :: xs) Here = Here
+elemAdd (_ :: xs) (There later) = There $ elemAdd xs later
 
-elemPrepend : {lst' : _} -> Elem i lst -> Elem i (lst' ++ lst)
-elemPrepend {lst' = []} el = el
-elemPrepend {lst' = l :: lst'} el = There $ elemPrepend el
+elemPrepend : {xs : _} -> Elem i ys -> Elem i (xs ++ ys)
+elemPrepend {xs = []} el = el
+elemPrepend {xs = l :: xs} el = There $ elemPrepend el
 
-elemAppend :  Elem i lst -> Elem i (lst ++ lst')
+elemAppend :  Elem i xs -> Elem i (xs ++ ys)
 elemAppend Here = Here
 elemAppend (There later) = There $ elemAppend later
 
 export
-splitNotElem : {lst : _} -> Not (Elem v $ lst ++ lst') -> (Not $ Elem v lst, Not $ Elem v lst')
-splitNotElem notEl = (\elLst => notEl $ elemAppend elLst, \elLst' => notEl $ elemPrepend elLst')
+splitNotElem : {xs : _} -> Not (Elem v $ xs ++ ys) -> (Not $ Elem v xs, Not $ Elem v ys)
+splitNotElem notEl = (\elys => notEl $ elemAppend elys, \elxs => notEl $ elemPrepend elxs)
 
-elemReplace : {vars' : _} -> Elem x (vars' ++ vars'') -> All (flip Elem vars''') vars'' -> Elem x (vars' ++ vars''')
-elemReplace {vars' = y :: ys} Here all = Here
-elemReplace {vars' = y :: ys} (There later) all = There $ elemReplace later all
-elemReplace {vars' = []} (There later) (p :: ps) = elemReplace {vars' = []} later ps
-elemReplace {vars' = []} Here (p :: ps) = p
+elemReplace : {ys : _} -> Elem x (ys ++ zs) -> All (flip Elem zs') zs -> Elem x (ys ++ zs')
+elemReplace {ys = y :: ys} Here all = Here
+elemReplace {ys = y :: ys} (There later) all = There $ elemReplace later all
+elemReplace {ys = []} (There later) (p :: ps) = elemReplace {ys = []} later ps
+elemReplace {ys = []} Here (p :: ps) = p
 
 export
-allElem : (vars : List a) -> All (flip Elem vars) vars
+allElem : (xs : List a) -> All (flip Elem xs) xs
 allElem [] = []
 allElem (x :: xs) = Here :: (mapProperty There $ allElem xs)
 
 export
-allElemDrop : {n : _} -> (vars : List a) -> (el : Elem n vars) -> All (flip Elem (n :: dropElem vars el)) vars
-allElemDrop (x :: xs) Here = Here :: (mapProperty There $ allElem xs)
-allElemDrop (x :: xs) (There later) =
-    let rec = allElemDrop xs later in 
-    There Here :: (mapProperty (elemAdd [n]) rec)
+allElemToTop : {n : _} -> (xs : List a) -> (el : Elem n xs) -> All (flip Elem (n :: dropElem xs el)) xs
+allElemToTop (x :: xs) Here = Here :: (mapProperty There $ allElem xs)
+allElemToTop (x :: xs) (There later) =
+    let rec = allElemToTop xs later in 
+    There Here :: mapProperty (elemAdd [n]) rec
 
 export
-allElemReplace : {vars' : _}
-    -> All (flip Elem vars''') vars''
-    -> All (flip Elem (vars' ++ vars'')) vars
-    -> All (flip Elem (vars' ++ vars''')) vars
+allElemReplace : {ys : _}
+    -> All (flip Elem xs) zs
+    -> All (flip Elem (ys ++ zs)) xxs
+    -> All (flip Elem (ys ++ xs)) xxs
 allElemReplace all [] = []
 allElemReplace all (x :: xs) = elemReplace x all :: allElemReplace all xs

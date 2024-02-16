@@ -83,7 +83,7 @@ eqVarsNotNoFind : i === n -> Not (IsJust $ find' (== n) (ftv $ TypVar i)) -> Voi
 eqVarsNotNoFind eq notJust =
     let isJust : IsJust (find' (== n) (ftv $ TypVar i)) =
             rewrite eq in
-            rewrite equalNatIdTrue n in ItIsJust in
+            rewrite equalNatReflTrue n in ItIsJust in
     notJust isJust
 
 export
