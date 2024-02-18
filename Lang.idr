@@ -69,7 +69,6 @@ retPartType (TyFunArg partTy) = TyFunArg $ retPartType partTy
 retPartType (TyFunRet partTy) = TyFunRet $ retPartType partTy
 retPartType TyRefl = TyFunRet TyRefl
 
-
 export
 partTypeSucc : Not (PartType ty (S n) ty)
 partTypeSucc (TyFunArg partTy) = partTypeSucc (argPartType partTy)

@@ -87,16 +87,16 @@ eqVarsNotNoFind eq notJust =
     notJust isJust
 
 export
-substTyIdNoFtv : (ty, sty : Typ)
+substTyReflNoFtv : (ty, sty : Typ)
     -> (n : Nat) 
     -> Not (IsJust $ find' (== n) (ftv ty)) 
     -> substType ty [(n, sty)] === ty
-substTyIdNoFtv (TypVar i) sty n notJust =
+substTyReflNoFtv (TypVar i) sty n notJust =
     case decEq i n of
         Yes ok => absurd $ eqVarsNotNoFind ok notJust
         No contra => rewrite notEqNatFalse contra in Refl
-substTyIdNoFtv (a :-> r) sty n notJust =
+substTyReflNoFtv (a :-> r) sty n notJust =
     let (aftv, rftv) = notFindSplit {xs = ftv a} {ys = ftv r} notJust in
-    rewrite substTyIdNoFtv a sty n aftv in
-    rewrite substTyIdNoFtv r sty n rftv in
+    rewrite substTyReflNoFtv a sty n aftv in
+    rewrite substTyReflNoFtv r sty n rftv in
     Refl

@@ -16,12 +16,16 @@ import Ext.Nat
 import Ext.List
 import Ext.List.Elem
 
+public export
+Unifiable : Typ -> Typ -> Subst -> Type
+Unifiable ty1 ty2 sub = (s0 : Subst) -> substType ty1 s0 === substType ty2 s0 -> (s' ** ((ty' : Typ) -> substType ty' s0 === substType ty' (s' + sub)))
+
 Ununifiable ty1 ty2 = (s : Subst) -> Not (substType ty1 s === substType ty2 s)
 
 public export
-record ScopeRel (vars : List Nat) (sub : Subst) where
+record ScopeRel (vars : Scope) (sub : Subst) where
     constructor MkTR
-    vars', svars : List Nat
+    vars', svars : Scope
     allEl : All (flip Elem $ svars ++ vars') vars
     allElTyVars : All (flip Elem vars) vars'
     lenEq : length (svars ++ vars') === length vars
@@ -42,7 +46,7 @@ composeTR (MkTR vars' svars allEl allElTyVars lenEq tyScopeSub) (MkTR vars'' sva
         (rewrite sym $ appendAssociative svars svars' vars'' in lengthReplace _ (sym lenEq') lenEq)
         ((mapTypeSubst allEl' tyScopeSub tyScopeSub') ++ tyScopeSub')
 
-substTypeVarId : {n : _} -> (tyt : Typ) -> (lookup' n ss === Nothing) -> substType tyt ss = substType tyt ((n, TypVar n) :: ss)
+substTypeVarId : {n : _} -> (tyt : Typ) -> (lookup' n s === Nothing) -> substType tyt s = substType tyt ((n, TypVar n) :: s)
 substTypeVarId (TypVar v) lookNone =
     case decEq v n of
         Yes prf =>
@@ -53,11 +57,11 @@ substTypeVarId (TypVar v) lookNone =
         No contra =>
             rewrite notEqNatFalse contra in Refl
 substTypeVarId (argTy :-> retTy) lookNone =
-        rewrite substTypeVarId {ss} argTy lookNone in 
-        rewrite substTypeVarId {ss} retTy lookNone in
+        rewrite substTypeVarId {s} argTy lookNone in 
+        rewrite substTypeVarId {s} retTy lookNone in
         Refl
 
-substTypeLook : {n : _} -> (tyt : Typ) -> lookup' n ss === Just r -> substType tyt ss = substType tyt ((n, r) :: ss)
+substTypeLook : {n : _} -> (tyt : Typ) -> lookup' n s === Just r -> substType tyt s = substType tyt ((n, r) :: s)
 substTypeLook (TypVar v) lookJust =
     case decEq v n of
         Yes prf =>
@@ -68,22 +72,25 @@ substTypeLook (TypVar v) lookJust =
         No contra =>
             rewrite notEqNatFalse contra in Refl
 substTypeLook (argTy :-> retTy) lookJust =
-        rewrite substTypeLook {ss} argTy lookJust in 
-        rewrite substTypeLook {ss} retTy lookJust in
+        rewrite substTypeLook {s} argTy lookJust in 
+        rewrite substTypeLook {s} retTy lookJust in
         Refl
 
 allDrop : (el : Elem e xs) -> All p xs -> All p (dropElem xs el)
 allDrop Here (_ :: all) = all
 allDrop (There later) (p :: all) = p :: allDrop later all
 
-partT : {n : _} -> (ty : Typ) -> IsJust (find' (== n) (ftv ty)) -> (l ** PartType (TypVar n) l ty)
-partT (TypVar v) isJust =
+isJustFtvTypVarRefl : {n, v : _} -> IsJust (find' (== n) (ftv (TypVar v))) -> n === v
+isJustFtvTypVarRefl isJust =
     case decEq v n of
-        Yes Refl => (0 ** TyRefl)
+        Yes Refl => Refl
         No contra => absurd $ go (notEqNatFalse contra) isJust
     where
     go : (b === False) -> IsJust (ifThenElse b val (find' (== n) [])) -> Void
     go Refl isJ = uninhabited isJ
+
+partT : {n : _} -> (ty : Typ) -> IsJust (find' (== n) (ftv ty)) -> (l ** PartType (TypVar n) l ty)
+partT (TypVar v) isJust = let prf = isJustFtvTypVarRefl {n} {v} isJust in (0 ** rewrite prf in TyRefl)
 partT (argTy :-> retTy) isJust =
     case findSplit isJust of
         Left isJust =>
@@ -107,57 +114,40 @@ varBind : {vars : _}
     -> Elem var vars
     -> (ty : Typ)
     -> TypeScope vars ty
-    -> Either (Ununifiable (TypVar var) ty) (sub ** (ScopeRel vars sub, substType (TypVar var) sub === substType ty sub, (ss : Subst) -> substType (TypVar var) ss === substType ty ss -> (s' ** ((ty' : Typ) -> substType ty' ss === substType ty' (s' + sub)))))
-varBind n nElVars (TypVar i) (TSVar iElVars) =
-    case decEq i n of
-        Yes ok => pure ([] ** (MkTR vars [] (allElem vars) (allElem vars) Refl [], rewrite ok in Refl, \ss => \eqq => (ss ** \_ => Refl)))
-        No contra =>
-            let iElDropVars = strengthenElem (\eq => contra $ sym eq) nElVars iElVars in
-            pure ([(n, TypVar i)] ** (MkTR _ [n] (allElemToTop vars nElVars) (allDrop _ $ allElem vars) (lengthSuccDropEl nElVars) [TSVar iElDropVars],
-                rewrite notEqNatFalse contra in
-                rewrite equalNatReflTrue n in Refl,
-                \ss => \eqq => (ss ** 
-                    rewrite sym eqq in
-                    case isItJust $ lookup' n ss of
-                        Yes ok =>
-                            \tyt => 
-                                let (r ** prf) = isJust _ ok in
-                                rewrite prf in 
-                                rewrite substTypeLook {ss} tyt prf in
-                                Refl
-                        No contra =>
-                            \tyt => 
-                                let prf = isNone _ contra in
-                                rewrite prf in 
-                                rewrite substTypeVarId {ss} tyt prf in
-                                Refl)))
-varBind n nElVars ty@(aty :-> rty) ts =
+    -> Either (Ununifiable (TypVar var) ty) (sub ** (ScopeRel vars sub, substType (TypVar var) sub === substType ty sub, Unifiable (TypVar var) ty sub))
+varBind n nElVars ty ts =
     case isItJust $ find' (== n) (ftv ty) of
         Yes yes =>
-            Left $ \s => \eq =>
-                let (_ ** prt) = partT (aty :-> rty) yes in
-                let (ItIsSucc {n = n'}) = partTypeS prt in
-                let partTyEq = replace {p = \c => PartType (substType (TypVar n) s) (S n') c} (sym eq) $ partTypeSubst {s} prt in
-                partTypeSucc {ty = substType (TypVar n) s} partTyEq
+            case ty of
+                (aty :-> rty) => 
+                    Left $ \s => \eq =>
+                        let (_ ** prt) = partT (aty :-> rty) yes in
+                        let (ItIsSucc {n = n'}) = partTypeS prt in
+                        let partTyEq = replace {p = \c => PartType (substType (TypVar n) s) (S n') c} (sym eq) $ partTypeSubst {s} prt in
+                        partTypeSucc {ty = substType (TypVar n) s} partTyEq
+                (TypVar v) =>
+                    let prf = isJustFtvTypVarRefl {n} {v} yes in
+                    pure ([] ** (MkTR vars [] (allElem vars) (allElem vars) Refl [], rewrite prf in Refl, \s => \eqq => (s ** \_ => Refl)))
         No contra =>
             let notEl = notTrans isJustFindElem contra in
-            pure $ ([(n, (aty :-> rty))] ** (MkTR _ [n] (allElemToTop vars nElVars) (allDrop _ $ allElem vars) (lengthSuccDropEl nElVars) [strengthenScope notEl nElVars ts],
+            pure $ ([(n, ty)] **
+               (MkTR _ [n] (allElemToTop vars nElVars) (allDrop _ $ allElem vars) (lengthSuccDropEl nElVars) [strengthenScope notEl nElVars ts],
                 rewrite equalNatReflTrue n in
-                rewrite substTyIdNoFtv (aty :-> rty) (aty :-> rty) n contra in
-                Refl, \ss => \eqq => (ss **
+                rewrite substTyReflNoFtv ty ty n contra in
+                Refl, \s => \eqq => (s **
                     rewrite sym eqq in
-                    case isItJust $ lookup' n ss of
+                    case isItJust $ lookup' n s of
                         Yes ok =>
                             \tyt => 
                                 let (r ** prf) = isJust _ ok in
                                 rewrite prf in 
-                                rewrite substTypeLook {ss} tyt prf in
+                                rewrite substTypeLook {s} tyt prf in
                                 Refl
                         No contra =>
                             \tyt => 
                                 let prf = isNone _ contra in
                                 rewrite prf in 
-                                rewrite substTypeVarId {ss} tyt prf in
+                                rewrite substTypeVarId {s} tyt prf in
                                 Refl)))
 
 funTyElemsEq : (x1 :-> y1) === (x2 :-> y2) -> (x1 === x2, y1 === y2)
@@ -168,11 +158,11 @@ unifyAcc : {vars : _}
     -> (ty1 : Typ) -> TypeScope vars ty1
     -> (ty2 : Typ) -> TypeScope vars ty2
     -> SizeAccessLex (length vars, size ty1)
-    -> Either (Ununifiable ty1 ty2) (sub ** (ScopeRel vars sub, substType ty1 sub === substType ty2 sub, (ss : Subst) -> substType ty1 ss === substType ty2 ss -> (s' ** ((ty' : Typ) -> substType ty' ss === substType ty' (s' + sub))))) 
+    -> Either (Ununifiable ty1 ty2) (sub ** (ScopeRel vars sub, substType ty1 sub === substType ty2 sub, Unifiable ty1 ty2 sub)) 
 unifyAcc (TypVar i) (TSVar iElVars) ty ts _ = varBind i iElVars ty ts 
 unifyAcc ty ts (TypVar i) (TSVar iElVars) _ = do
     case varBind i iElVars ty ts of
-        Right (s ** (tr, prf, substId)) => pure (s ** (tr, sym prf, \ss => \eqq => substId ss $ sym eqq))
+        Right (s ** (tr, prf, substId)) => pure (s ** (tr, sym prf, \s' => \eqq => substId s' $ sym eqq))
         Left contra => Left $ \s => \eq => contra s (sym eq)
 unifyAcc (argTy1 :-> retTy1) (TSFun tsArg1 tsRet1) (argTy2 :-> retTy2) (TSFun tsArg2 tsRet2) sizeAcc@(Access rec) =
     let Right (s1 ** (tr1, prf1, mg1)) = unifyAcc argTy1 tsArg1 argTy2 tsArg2 (rec _ $ Right $ LTESucc $ lteAddRight _)
@@ -207,23 +197,23 @@ unifyAcc (argTy1 :-> retTy1) (TSFun tsArg1 tsRet1) (argTy2 :-> retTy2) (TSFun ts
         rewrite prf2 in
         rewrite cong (flip substType s2) prf1 in
         Refl,
-        \ss => \eqq =>
+        \s => \eqq =>
             let (argEq, retEq) = funTyElemsEq eqq in
-            let (ss1 ** eq1) = mg1 ss argEq in
-            let (ss2 ** eq2) = mg2 ss1
-                    (rewrite sym $ composeSubst retTy1 s1 ss1 in
+            let (s' ** eq1) = mg1 s argEq in
+            let (s'' ** eq2) = mg2 s'
+                    (rewrite sym $ composeSubst retTy1 s1 s' in
                      rewrite sym $ eq1 retTy1 in
-                     rewrite sym $ composeSubst retTy2 s1 ss1 in
+                     rewrite sym $ composeSubst retTy2 s1 s' in
                      rewrite sym $ eq1 retTy2 in
                      retEq) in
-            the ((s' : List (Nat, Typ) ** (ty' : Typ) -> substType ty' ss = substType ty' (mapImpl (\arg => bimap id (\y => substType y s') arg) (mapImpl (\arg => bimap id (\y => substType y s2) arg) s1 ++ s2) ++ s')))
-            (ss2 ** \ty'' =>
-                rewrite composeSubst ty'' (s2 + s1) ss2 in
-                rewrite composeSubst ty'' s1 s2 in
-                rewrite sym $ composeSubst (substType ty'' s1) s2 ss2 in
-                rewrite sym $ eq2 (substType ty'' s1) in
-                rewrite eq1 ty'' in
-                rewrite composeSubst ty'' s1 ss1 in
+            the (s' : Subst ** (ty' : Typ) -> substType ty' s = substType ty' (s' + (s2 + s1)))
+            (s'' ** \ty' =>
+                rewrite composeSubst ty' (s2 + s1) s'' in
+                rewrite composeSubst ty' s1 s2 in
+                rewrite sym $ composeSubst (substType ty' s1) s2 s'' in
+                rewrite sym $ eq2 (substType ty' s1) in
+                rewrite eq1 ty' in
+                rewrite composeSubst ty' s1 s' in
                 Refl)))
 
 export

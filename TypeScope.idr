@@ -12,12 +12,16 @@ import Ext.List.Elem
 import Decidable.Equality
 
 public export
-data TypeScope : List Nat -> Typ -> Type where
+Scope : Type
+Scope = List Nat
+
+public export
+data TypeScope : Scope -> Typ -> Type where
     TSVar : Elem n vars -> TypeScope vars (TypVar n)
     TSFun : TypeScope vars argTy -> TypeScope vars retTy -> TypeScope vars (argTy :-> retTy)
 
 public export
-data TypeScopeSubst : List Nat -> List Nat -> Subst -> Type where
+data TypeScopeSubst : Scope -> Scope -> Subst -> Type where
     Nil : TypeScopeSubst [] vars []
     (::) : TypeScope vars ty -> TypeScopeSubst svars' vars sub -> TypeScopeSubst (i :: svars') vars ((i, ty) :: sub)
 
