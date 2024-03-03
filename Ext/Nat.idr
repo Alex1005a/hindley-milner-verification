@@ -8,6 +8,11 @@ equalNatReflTrue Z = Refl
 equalNatReflTrue (S n) = equalNatReflTrue n
 
 export
+ltZeroFalse : (i : Nat) -> (i < 0) === False
+ltZeroFalse Z = Refl
+ltZeroFalse (S i) = Refl
+
+export
 notEqNatFalse : {i, n : Nat} -> Not (i === n) -> equalNat i n === False
 notEqNatFalse notEq {i = Z} {n = Z} = absurd $ notEq Refl
 notEqNatFalse notEq {i = Z} {n = S n} = Refl
