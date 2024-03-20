@@ -12,7 +12,8 @@ import Decidable.Equality
 infixr 2 :->
 infix 11 ::>
 infix 10 |-
-infix 10 ~~>
+infix 10 |->
+infix 10 |->*
 
 public export
 data Term : Nat -> Type where
@@ -78,19 +79,21 @@ subst (Abs body) tm = Abs $ subst {l = S l} body tm
 data Value : Term n -> Type where
     VAbs : Value (Abs body)
 
-data (~~>) : Term n -> Term n -> Type where
-    RedAppFun : fun ~~> rfun
-        -> (App fun arg) ~~> (App rfun arg)
-    
-    RedAppArg : Value fun
-        -> arg ~~> rarg
-        -> (App fun arg) ~~> (App fun rarg)
+data (|->) : Term n -> Term n -> Type where
+    RedAppFun : fun |-> rfun
+        -> (App fun arg) |-> (App rfun arg)
 
-    RedAbs : Value arg
-        -> (App (Abs body) arg) ~~> subst {l = 0} body arg
+    RedBeta : (App (Abs body) arg) |-> subst {l = 0} body arg
+
+data (|->*) : Term n -> Term n -> Type where
+    RDone : tm |->* tm
+    
+    RStep : m |->* n
+        -> l |-> m
+        -> l |->* n
 
 data Progress : Term n -> Type where
-  Step : m ~~> n
+  Step : m |-> n
       ----------
     -> Progress m
 
@@ -102,10 +105,48 @@ progress : [] |- (tm ::> ty) -> Progress tm
 progress (TAbs body) = Done VAbs
 progress (TApp fun arg) =
     case progress fun of
-        Done VAbs => case progress arg of
-                        Done val => Step $ RedAbs val
-                        Step red => Step $ RedAppArg VAbs red
+        Done VAbs => Step RedBeta
         Step red => Step $ RedAppFun red
+
+Halts : {n : _} -> Term n -> Typ -> Type
+Halts tm ty = (v ** (tm |->* v, Value v))
+
+Reducibility : {n : _} -> Typ -> Env n -> Term n -> Type
+Reducibility (TypVar i) env tm = (env |- (tm ::> TypVar i), Halts tm (TypVar i))
+Reducibility (argTy :-> retTy) env tm =
+    (env |- (tm ::> (argTy :-> retTy)),
+        Halts tm (argTy :-> retTy),
+        ({tm' : _} -> Reducibility argTy env tm'  -> Reducibility retTy env (App tm tm')))
+
+lemma2 : {ty : _} -> Reducibility ty env tm -> Halts tm ty
+lemma2 {ty = TypVar i} (_, h) = h
+lemma2 {ty = argTy :-> retTy} (_, h, _) = h
+
+ruleRed : {ty : _} ->  Reducibility ty env tm -> env |- (tm ::> ty)
+ruleRed {ty = TypVar i} (rule, _) = rule
+ruleRed {ty = argTy :-> retTy} (rule, _) = rule
+
+closedRed : {ty : _} -> env |- (tm ::> ty) ->  Reducibility ty env tm3 -> tm |-> tm3 -> Reducibility ty env tm
+closedRed {ty = TypVar i} rr (rule, (v ** (r', norm))) r = (rr, (v ** (RStep r' r, norm)))
+closedRed {ty = argTy :-> retTy} rr (rule, (v ** (r', norm)), rfun) r =
+    (rr, (v ** (RStep r' r, norm)), \red => closedRed (TApp rr (ruleRed red)) (rfun red) (RedAppFun r))
+
+substAll : {g : _} -> Term (g + n) -> Vect n (Term 0) -> Term g
+substAll tm [] = rewrite sym $ plusZeroRightNeutral g in tm
+substAll {n = S n} tm (stm :: sub) =
+    rewrite sym $ plusZeroRightNeutral g in
+    subst {l = g} (substAll (rewrite sym $ plusAssociative g 1 n in tm) sub) stm
+
+substAllBody : (tms : Vect n (Term 0)) -> substAll {g = l} (Abs body) tms === Abs (substAll {g = S l} body tms)
+substAllBody [] = rewrite  plusZeroRightNeutral l in Refl
+substAllBody {n = S n} (tm :: tms) =
+    let rec = substAllBody {l = S l} {body = rewrite plusSuccRightSucc l n in body} tms in
+    rewrite sym $ plusSuccRightSucc l n in
+    ?substAllBody_rhs
+
+substAllApp : (tms : Vect n (Term 0)) -> substAll {g = l} (App fun arg) tms === App (substAll {g = l} fun tms) (substAll {g = l} arg tms)
+substAllApp [] = rewrite plusZeroRightNeutral l in Refl
+substAllApp {n = S n} (tm :: tms) = ?substAllApp_rhs -- let rec = substAllApp {arg} {fun} {l = S l} tms in  
 
 weakenVarLTn : {n : _}
     -> {0 t : Typ}
@@ -182,7 +223,6 @@ substPresVar {pre = _ :: pre} rule (There v) =
 substPresVar {pre = []} rule Here = rule
 substPresVar {pre = []} rule (There v) = TVar v
 
-
 substPresTy : {n : _}
     -> {0 m : _}
     -> {0 tm : Term (n + S m)}
@@ -196,12 +236,69 @@ substPresTy rule (TVar v) = substPresVar rule v
 substPresTy rule (TAbs {argTy} {body} rbody) = TAbs $ substPresTy {pre = argTy :: pre} rule rbody
 substPresTy rule (TApp fun arg) = TApp (substPresTy rule fun) (substPresTy rule arg)
 
+appendAssociative : {0 n, m, g : Nat}
+    -> (l : Vect n a)
+    -> (c : Vect m a)
+    -> (r : Vect g a)
+    -> l ++ (c ++ r) = (rewrite plusAssociative n m g in (l ++ c) ++ r)
+appendAssociative []      c r = Refl
+appendAssociative {n = S n} (_::xs) c r =
+    rewrite appendAssociative xs c r in
+    rewrite sym $ plusAssociative n m g in Refl
+
+appendNilRightNeutral : {0 n : _} -> (l : Vect n a) -> (rewrite sym $ plusZeroRightNeutral n in l ++ []) = l
+appendNilRightNeutral []      = Refl
+appendNilRightNeutral {n = S n} (_::xs) =
+    rewrite appendNilRightNeutral xs in
+    rewrite plusZeroRightNeutral n in
+    Refl
+
+data EnvTerms : Env n -> Vect n (Term 0) -> Type where
+    Nil : EnvTerms [] []
+    (::) : Reducibility ty [] tm -> EnvTerms env tms -> EnvTerms (ty :: env) (tm :: tms)
+
+lemma3 : {g : _} -> {env : Env n} -> {tm : Term (g + n)} -> {tms : Vect n (Term 0)} -> {envTms : EnvTerms env tms} -> {pre : Env g}
+    -> (pre ++ env) |- (tm ::> ty) -> pre |- (substAll {g} tm tms ::> ty)
+lemma3 {n = S n} {env = typ :: env} {envTms = r :: envTms} rule =
+    let rec = lemma3 {envTms} {pre = pre ++ [typ]} (rewrite sym $ appendAssociative pre [typ] env in
+                                                    rewrite sym $ plusAssociative g 1 n in rule) in
+    let srule = substPresTy {pre} (ruleRed r) rec in
+    rewrite sym $ appendNilRightNeutral pre in ?lemma3_rhs1
+lemma3 {envTms = []} rule = ?lemma3_rhs2
+
+lookupRed : AtIndex fi env ty -> AtIndex fi tms tm -> EnvTerms env tms -> Reducibility ty [] tm
+lookupRed Here Here (r :: _) = r
+lookupRed (There later) (There later') (_ :: envTms) = lookupRed later later' envTms
+
+fund : {tm, ty : _} -> {env : Env n} -> {tms : Vect n (Term 0)} -> {envTms : EnvTerms env tms}
+    -> env |- (tm ::> ty) -> Reducibility ty [] (substAll {g = 0} tm tms)
+fund (TVar var) = lookupRed var ?substVarAtIndex envTms
+fund (TApp {arg} {fun} fun' arg') =
+    let (rule, (v ** (r', norm)), rfun) = fund {envTms} fun' in
+    rewrite substAllApp {l = 0} {arg} {fun} tms in
+    rfun (fund {envTms} arg')
+fund rule@(TAbs {body} rbody) =
+    let rule = lemma3 {envTms} {env} rule in
+    (rule, (_ ** (rewrite substAllBody {l = 0} {body} tms in RDone, VAbs)), go rule rbody)
+    where
+    go : {retTy, argTy, tm' : _}
+        -> [] |- (substAll (Abs body) tms ::> (argTy :-> retTy))
+        -> (argTy :: env) |- (body ::> retTy)
+        -> Reducibility argTy [] tm'
+        -> Reducibility retTy [] (App (substAll (Abs body) tms) tm')
+    go rabs rbody red =
+        rewrite substAllBody  {l = 0} {body} tms in
+        closedRed {tm = App (Abs (substAll body tms)) tm'}
+            (rewrite sym $ substAllBody {l = 0} {body} tms in TApp rabs (ruleRed red)) (fund {envTms = red :: envTms} rbody) RedBeta
+
+weakNorm : {tm, ty : _} -> [] |- (tm ::> ty) -> (v ** (tm |->* v, Value v))
+weakNorm rule = lemma2 $ fund {envTms = []} rule
+
 preserve : env |- (tm ::> ty)
-  -> tm ~~> r
+  -> tm |-> r
   -> env |- (r ::> ty)
 preserve (TApp fun arg) (RedAppFun funRed) = TApp (preserve fun funRed) arg
-preserve (TApp fun arg) (RedAppArg vfun argRed) = TApp fun (preserve arg argRed)
-preserve (TApp (TAbs body) arg) (RedAbs varg) = substPresTy {pre = []} arg body
+preserve (TApp (TAbs body) arg) RedBeta = substPresTy {pre = []} arg body
 
 public export
 ftv : Typ -> List Nat
